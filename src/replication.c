@@ -1662,18 +1662,30 @@ int cancelReplicationHandshake(void) {
     return 1;
 }
 
-/* Set replication to the specified master address and port. */
+/* 重置当前节点的主节点数据，进行连接前的初始化工作 */
 void replicationSetMaster(char *ip, int port) {
     sdsfree(server.masterhost);
     server.masterhost = sdsnew(ip);
     server.masterport = port;
     if (server.master) freeClient(server.master);
-    disconnectAllBlockedClients(); /* Clients blocked in master, now slave. */
-    disconnectSlaves(); /* Force our slaves to resync with us as well. */
+    /*
+        断开所有的阻塞客户端，因为阻塞操作需要依赖于未来的实例状态
+        举个例子，当前有一个list，存在BLPUSH和BLPOP操作，如果不断连，主节点切换为从节点后，BLPUSH将永远不满足条件，导致BLPOP也不会被满足
+        避免客户端陷入无限期阻塞
+    */
+    disconnectAllBlockedClients();
+    /*
+        断开当前节点的从节点，断开后连接新主节点时会清空已有的数据，方便重同步
+    */
+    disconnectSlaves();
+
+    /*
+        清空当前缓存的主节点信息，下次直接进行全量同步，避免使用部分复制
+    */
     replicationDiscardCachedMaster(); /* Don't try a PSYNC. */
     freeReplicationBacklog(); /* Don't allow our chained slaves to PSYNC. */
     cancelReplicationHandshake();
-    server.repl_state = REDIS_REPL_CONNECT;
+    server.repl_state = REDIS_REPL_CONNECT; // 可以进行连接的状态
     server.master_repl_offset = 0;
     server.repl_down_since = 0;
 }
@@ -1711,15 +1723,13 @@ void replicationHandleMasterDisconnection(void) {
 }
 
 void slaveofCommand(redisClient *c) {
-    /* SLAVEOF is not allowed in cluster mode as replication is automatically
-     * configured using the current address of the master node. */
+    /* 集群模式下禁止slaveof执行，数据同步由集群自动管理 */
     if (server.cluster_enabled) {
         addReplyError(c,"SLAVEOF not allowed in cluster mode.");
         return;
     }
 
-    /* The special host/port combination "NO" "ONE" turns the instance
-     * into a master. Otherwise the new master address is set. */
+    /* slaveof no one表示将当前节点升级为主节点 */
     if (!strcasecmp(c->argv[1]->ptr,"no") &&
         !strcasecmp(c->argv[2]->ptr,"one")) {
         if (server.masterhost) {
@@ -1735,7 +1745,7 @@ void slaveofCommand(redisClient *c) {
         if ((getLongFromObjectOrReply(c, c->argv[2], &port, NULL) != REDIS_OK))
             return;
 
-        /* Check if we are already attached to the specified slave */
+        /* 验证当前从节点的主节点是否是本次命令指定的主节点 */
         if (server.masterhost && !strcasecmp(server.masterhost,c->argv[1]->ptr)
             && server.masterport == port) {
             redisLog(REDIS_NOTICE,"SLAVE OF would result into synchronization with the master we are already connected with. No operation performed.");
