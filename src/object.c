@@ -356,43 +356,54 @@ int isObjectRepresentableAsLongLong(robj *o, long long *llval) {
 }
 
 /* Try to encode a string object in order to save space */
+/*
+    优化String的内存结构
+*/
 robj *tryObjectEncoding(robj *o) {
     long value;
     sds s = o->ptr;
     size_t len;
 
-    /* Make sure this is a string object, the only type we encode
-     * in this function. Other types use encoded memory efficient
-     * representations but are handled by the commands implementing
-     * the type. */
+    // 确保是字符串类型
     serverAssertWithInfo(NULL,o,o->type == OBJ_STRING);
 
-    /* We try some specialized encoding only for objects that are
-     * RAW or EMBSTR encoded, in other words objects that are still
-     * in represented by an actually array of chars. */
+    // String有两种编码格式:raw和embstr，满足这两种类型才满足优化的条件
     if (!sdsEncodedObject(o)) return o;
 
-    /* It's not safe to encode shared objects: shared objects can be shared
-     * everywhere in the "object space" of Redis and may end in places where
-     * they are not handled. We handle them only as values in the keyspace. */
+    /*
+        Redis为了节省内存，会创建一些常见的共享对象，对象的引用计数refcount大于1，说明被多个地方引用，是共享对象
+        如果对共享对象进行内存调整，会导致不可预知的风险，放弃优化，避免潜在风险，安全是第一位
+    */
      if (o->refcount > 1) return o;
 
     /* Check if we can represent this string as a long integer.
      * Note that we are sure that a string larger than 20 chars is not
      * representable as a 32 nor 64 bit integer. */
     len = sdslen(s);
+
+    /*
+        判断value是否是纯数字字符串，如果是的话，直接使用整型存储，节省内存
+        2^64 - 1 = 18446744073709551615，长度为20位，所以长度如果大于20位，肯定不符合条件
+    */
     if (len <= 20 && string2l(s,len,&value)) {
         /* This object is encodable as a long. Try to use a shared object.
          * Note that we avoid using shared integers when maxmemory is used
          * because every object needs to have a private LRU field for the LRU
          * algorithm to work well. */
+
+        /*
+            必须保证内存淘汰策略不是LRU，因为LRU需要为每个key精确统计访问时间，共享对象是所有引用共享一个lru字段，
+            虽然lru是按照key的访问时间进行记录，但它本身存储在value中，所以会被共享，从而导致LRU失效
+        */
         if ((server.maxmemory == 0 ||
              (server.maxmemory_policy != MAXMEMORY_VOLATILE_LRU &&
               server.maxmemory_policy != MAXMEMORY_ALLKEYS_LRU)) &&
             value >= 0 &&
             value < OBJ_SHARED_INTEGERS)
+        // 使用共享对象，redis使用缓存池存储一些常见的可复用对象，比如这里是0-9999的整数默认被缓存
         {
-            decrRefCount(o);
+
+            decrRefCount(o); // 释放对象，之所以一定被释放是因为走到这个逻辑的refcount一定为1
             incrRefCount(shared.integers[value]);
             return shared.integers[value];
         } else {
@@ -407,6 +418,15 @@ robj *tryObjectEncoding(robj *o) {
      * try the EMBSTR encoding which is more efficient.
      * In this representation the object and the SDS string are allocated
      * in the same chunk of memory to save space and cache misses. */
+
+    /*
+        简单探讨下为什么OBJ_ENCODING_EMBSTR_SIZE_LIMIT == 44？
+        robj 结构体大小为 16字节；sdshdr8 结构体大小为 3字节; '\0'占用 1字节;
+        robj: type:4 + encoding:4 + lru:24 + refcount:32 + ptr:64(64位系统) = 128位 = 16字节
+        sdshdr8: len:8 + alloc:8 + flag:8 = 24 位 = 3字节
+
+        大多数现代内存分配器都以 64字节 为最小分配单元: 64 - 16 - 3 - 1 = 44
+    */
     if (len <= OBJ_ENCODING_EMBSTR_SIZE_LIMIT) {
         robj *emb;
 
@@ -425,6 +445,8 @@ robj *tryObjectEncoding(robj *o) {
      * We do that only for relatively large strings as this branch
      * is only entered if the length of the string is greater than
      * OBJ_ENCODING_EMBSTR_SIZE_LIMIT. */
+
+    // 空闲空间超过已用空间的10%，释放空闲空间
     if (o->encoding == OBJ_ENCODING_RAW &&
         sdsavail(s) > len/10)
     {

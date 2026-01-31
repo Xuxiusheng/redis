@@ -204,6 +204,10 @@ sds sdsMakeRoomFor(sds s, size_t addlen) {
     len = sdslen(s);
     sh = (char*)s-sdsHdrSize(oldtype);
     newlen = (len+addlen);
+
+    // 空间预分配策略，小字符串(<1MB)加倍扩容，大字符串(>=1MB)线性扩容，这种策略是空间与时间成本的权衡
+    // 小字符串: 减少频繁realloc，但是内存浪费可能比较严重
+    // 大字符串: 减少内存碎片，但是可能频繁realloc
     if (newlen < SDS_MAX_PREALLOC)
         newlen *= 2;
     else
@@ -376,6 +380,7 @@ sds sdsgrowzero(sds s, size_t len) {
 sds sdscatlen(sds s, const void *t, size_t len) {
     size_t curlen = sdslen(s);
 
+    // 确保空闲空间大于 len
     s = sdsMakeRoomFor(s,len);
     if (s == NULL) return NULL;
     memcpy(s+curlen, t, len);

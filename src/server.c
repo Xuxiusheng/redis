@@ -123,8 +123,8 @@ struct redisServer server; /* server global state */
  *    are not fast commands.
  */
 struct redisCommand redisCommandTable[] = {
-    {"get",getCommand,2,"rF",0,NULL,1,1,1,0,0},
-    {"set",setCommand,-3,"wm",0,NULL,1,1,1,0,0},
+    {"get",getCommand,2,"rF",0,NULL,1,1,1,0,0}, // string get操作的函数入口
+    {"set",setCommand,-3,"wm",0,NULL,1,1,1,0,0}, // string set操作的函数入口
     {"setnx",setnxCommand,3,"wmF",0,NULL,1,1,1,0,0},
     {"setex",setexCommand,4,"wm",0,NULL,1,1,1,0,0},
     {"psetex",psetexCommand,4,"wm",0,NULL,1,1,1,0,0},

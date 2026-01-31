@@ -83,6 +83,10 @@ struct __attribute__ ((__packed__)) sdshdr64 {
 #define SDS_HDR(T,s) ((struct sdshdr##T *)((s)-(sizeof(struct sdshdr##T))))
 #define SDS_TYPE_5_LEN(f) ((f)>>SDS_TYPE_BITS)
 
+/*
+    判断不同的类型，返回字符串的长度
+    flags是buf之前的字段，s[-1]表示flag的值
+*/
 static inline size_t sdslen(const sds s) {
     unsigned char flags = s[-1];
     switch(flags&SDS_TYPE_MASK) {
@@ -100,6 +104,9 @@ static inline size_t sdslen(const sds s) {
     return 0;
 }
 
+/*
+    计算可用空间，返回可用空间
+*/
 static inline size_t sdsavail(const sds s) {
     unsigned char flags = s[-1];
     switch(flags&SDS_TYPE_MASK) {

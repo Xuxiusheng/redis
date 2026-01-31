@@ -84,8 +84,8 @@ void setGenericCommand(client *c, int flags, robj *key, robj *val, robj *expire,
         return;
     }
     setKey(c->db,key,val);
-    server.dirty++;
-    if (expire) setExpire(c->db,key,mstime()+milliseconds);
+    server.dirty++; // 记录自上次rdb持久化以来的脏数据，用于触发rdb持久化
+    if (expire) setExpire(c->db,key,mstime()+milliseconds); // 设置过期时间
     notifyKeyspaceEvent(NOTIFY_STRING,"set",key,c->db->id);
     if (expire) notifyKeyspaceEvent(NOTIFY_GENERIC,
         "expire",key,c->db->id);
@@ -105,7 +105,7 @@ void setCommand(client *c) {
 
         if ((a[0] == 'n' || a[0] == 'N') &&
             (a[1] == 'x' || a[1] == 'X') && a[2] == '\0' &&
-            !(flags & OBJ_SET_XX))
+            !(flags & OBJ_SET_XX)) // XX和NX不能同时出现，XX是存在时才执行，NX是不存在时才执行
         {
             flags |= OBJ_SET_NX;
         } else if ((a[0] == 'x' || a[0] == 'X') &&
@@ -116,6 +116,7 @@ void setCommand(client *c) {
         } else if ((a[0] == 'e' || a[0] == 'E') &&
                    (a[1] == 'x' || a[1] == 'X') && a[2] == '\0' &&
                    !(flags & OBJ_SET_PX) && next)
+            // EX和PX不能同时出现，EX是设置过期时间，单位是秒，PX是设置过期时间，单位是毫秒
         {
             flags |= OBJ_SET_EX;
             unit = UNIT_SECONDS;
@@ -134,7 +135,7 @@ void setCommand(client *c) {
             return;
         }
     }
-
+    // 优化value的内存结构，以更加节省内存的方式存储
     c->argv[2] = tryObjectEncoding(c->argv[2]);
     setGenericCommand(c,flags,c->argv[1],c->argv[2],expire,unit,NULL,NULL);
 }

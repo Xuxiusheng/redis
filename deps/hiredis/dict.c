@@ -173,6 +173,10 @@ static int dictReplace(dict *ht, void *key, void *val) {
      * you want to increment (set), and then decrement (free), and not the
      * reverse. */
     auxentry = *entry;
+    /*
+        这两者的顺序绝对不能颠倒，先设置新值，再删除旧值，因为删除旧值会释放旧值，引用计数为0会直接释放掉内存
+        新值和旧值指向的内存是一样的，新值变成了野指针，发生内存泄漏
+    */
     dictSetHashVal(ht, entry, val);
     dictFreeEntryVal(ht, &auxentry);
     return 0;

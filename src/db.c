@@ -134,7 +134,7 @@ robj *lookupKeyRead(redisDb *db, robj *key) {
  * Returns the linked value object if the key exists or NULL if the key
  * does not exist in the specified DB. */
 robj *lookupKeyWrite(redisDb *db, robj *key) {
-    expireIfNeeded(db,key);
+    expireIfNeeded(db,key); //惰性删除，如果key过期了，就将其删除
     return lookupKey(db,key,LOOKUP_NONE);
 }
 
