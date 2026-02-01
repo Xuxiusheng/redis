@@ -523,13 +523,14 @@ unsigned char *__ziplistCascadeUpdate(unsigned char *zl, unsigned char *p) {
 }
 
 /* Delete "num" entries, starting at "p". Returns pointer to the ziplist. */
+// ziplist删除操作
 unsigned char *__ziplistDelete(unsigned char *zl, unsigned char *p, unsigned int num) {
     unsigned int i, totlen, deleted = 0;
     size_t offset;
     int nextdiff = 0;
     zlentry first, tail;
 
-    zipEntry(p, &first);
+    zipEntry(p, &first); // 将p的内存存储结构转化为应用层操作的zlentry结构体
     for (i = 0; p[0] != ZIP_END && i < num; i++) {
         p += zipRawEntryLength(p);
         deleted++;
@@ -542,11 +543,17 @@ unsigned char *__ziplistDelete(unsigned char *zl, unsigned char *p, unsigned int
              * number of bytes required compare to the current `prevrawlen`.
              * There always is room to store this, because it was previously
              * stored by an entry that is now being deleted. */
-            nextdiff = zipPrevLenByteDiff(p,first.prevrawlen);
-            p -= nextdiff;
-            zipPrevEncodeLength(p,first.prevrawlen);
 
-            /* Update offset for tail */
+            /*
+                删除元素时，需要更新被删除的最后一个entry的下一个entry的prevrawlen字段
+                nextdiff 是更新前后的prevrawlen差值
+            */
+            nextdiff = zipPrevLenByteDiff(p,first.prevrawlen);
+            // 校正p的位置
+            p -= nextdiff;
+            zipPrevEncodeLength(p,first.prevrawlen); // 修改prevrawlen
+
+            // 删除元素后，尾部偏移量发生变动，修改zltail
             ZIPLIST_TAIL_OFFSET(zl) =
                 intrev32ifbe(intrev32ifbe(ZIPLIST_TAIL_OFFSET(zl))-totlen);
 
@@ -554,6 +561,8 @@ unsigned char *__ziplistDelete(unsigned char *zl, unsigned char *p, unsigned int
              * "nextdiff" in account as well. Otherwise, a change in the
              * size of prevlen doesn't have an effect on the *tail* offset. */
             zipEntry(p, &tail);
+
+            // zltail表示最后一个entry的偏移量，由于nextdiff也会造成偏移，将其考虑进去
             if (p[tail.headersize+tail.len] != ZIP_END) {
                 ZIPLIST_TAIL_OFFSET(zl) =
                    intrev32ifbe(intrev32ifbe(ZIPLIST_TAIL_OFFSET(zl))+nextdiff);
@@ -574,8 +583,7 @@ unsigned char *__ziplistDelete(unsigned char *zl, unsigned char *p, unsigned int
         ZIPLIST_INCR_LENGTH(zl,-deleted);
         p = zl+offset;
 
-        /* When nextdiff != 0, the raw length of the next entry has changed, so
-         * we need to cascade the update throughout the ziplist */
+        // 级联更新
         if (nextdiff != 0)
             zl = __ziplistCascadeUpdate(zl,p);
     }
