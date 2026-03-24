@@ -75,8 +75,16 @@ typedef struct quicklist {
     quicklistNode *tail;
     unsigned long count;        /* total count of all entries in all ziplists */
     unsigned int len;           /* number of quicklistNodes */
-    int fill : 16;              /* fill factor for individual nodes */
-    unsigned int compress : 16; /* depth of end nodes not to compress;0=off */
+    /*
+        fill > 0: ziplist的最大entry数量
+        fill < 0: 表示直接限制内存大小: -1表示最大4KB, -5表示最大64KB
+    */
+    int fill : 16;
+    /*
+        压缩深度compress=n: list的前n个和最后n个不压缩,中间的quicklistNode压缩存储
+        CPU资源充足，内存资源受限的条件下建议开启
+    */
+    unsigned int compress : 16;
 } quicklist;
 
 typedef struct quicklistIter {

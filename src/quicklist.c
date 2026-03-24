@@ -180,10 +180,13 @@ REDIS_STATIC int __quicklistCompressNode(quicklistNode *node) {
     node->attempted_compress = 1;
 #endif
 
-    /* Don't bother compressing small values */
+    /* 如果node本身的内存字节占用较小，不进行压缩 */
     if (node->sz < MIN_COMPRESS_BYTES)
         return 0;
 
+	/*
+		压缩前不能确定压缩后的大小，并且压缩算法不能保证压缩后数据一定比原始数据小，所以预留node->size的空间
+	*/
     quicklistLZF *lzf = zmalloc(sizeof(*lzf) + node->sz);
 
     /* Cancel if compression fails or doesn't compress small enough */

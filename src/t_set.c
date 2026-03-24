@@ -58,18 +58,21 @@ int setTypeAdd(robj *subject, robj *value) {
             return 1;
         }
     } else if (subject->encoding == OBJ_ENCODING_INTSET) {
+        /*
+            需要注意的是，只有本部分代码没有increRefCount，是因为插入intset元素时，插入的是
+            值本身，而不是robj对象
+        */
         if (isObjectRepresentableAsLongLong(value,&llval) == C_OK) {
             uint8_t success = 0;
             subject->ptr = intsetAdd(subject->ptr,llval,&success);
             if (success) {
-                /* Convert to regular set when the intset contains
-                 * too many entries. */
+                /* 插入元素后，判断是否需要执行intset->hashtable的转换 */
                 if (intsetLen(subject->ptr) > server.set_max_intset_entries)
                     setTypeConvert(subject,OBJ_ENCODING_HT);
                 return 1;
             }
         } else {
-            /* Failed to get integer from object, convert to regular set. */
+            /* set编码为intset，但新值为string类型 */
             setTypeConvert(subject,OBJ_ENCODING_HT);
 
             /* The set *was* an intset and this value is not integer
@@ -275,6 +278,7 @@ void saddCommand(client *c) {
 
     set = lookupKeyWrite(c->db,c->argv[1]);
     if (set == NULL) {
+        // 根据第一个插入元素选择底层编码结构:intset or hashtable
         set = setTypeCreate(c->argv[2]);
         dbAdd(c->db,c->argv[1],set);
     } else {

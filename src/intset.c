@@ -206,16 +206,11 @@ intset *intsetAdd(intset *is, int64_t value, uint8_t *success) {
     uint32_t pos;
     if (success) *success = 1;
 
-    /* Upgrade encoding if necessary. If we need to upgrade, we know that
-     * this value should be either appended (if > 0) or prepended (if < 0),
-     * because it lies outside the range of existing values. */
+    /* 新值编码大于intset编码方式时，不需要查重，直接升级intset编码并插入元素 */
     if (valenc > intrev32ifbe(is->encoding)) {
-        /* This always succeeds, so we don't need to curry *success. */
         return intsetUpgradeAndAdd(is,value);
     } else {
-        /* Abort if the value is already present in the set.
-         * This call will populate "pos" with the right position to insert
-         * the value when it cannot be found. */
+        /* 如果值已存在，不需要插入直接返回 */
         if (intsetSearch(is,value,&pos)) {
             if (success) *success = 0;
             return is;
